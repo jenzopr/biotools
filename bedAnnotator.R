@@ -1,11 +1,12 @@
-#!/data/packages/R/3.1.1/bin/Rscript
+#!/usr/local/bin/Rscript
 ####################################################################################################################
 #
 # This script annotates regions in bed files (e.g. from ChiP-Seq) with supplied annotation files.
 # @author Jens Preußner<jens.preussner@mpi-bn.mpg.de>
 # @version 1.0
 # @license MIT
-# 
+# @requirements getopt, ChIPpeakAnno
+#
 # Copyright (c) 2014, Jens Preussner
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
