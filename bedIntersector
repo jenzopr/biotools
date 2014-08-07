@@ -1,0 +1,126 @@
+#!/bin/bash
+####################################################################################################################
+#
+# This script intersects and merges regions in multiple bed files (e.g. from ChiP-Seq).
+# @author Jens Preußner<jens.preussner@mpi-bn.mpg.de>
+# @version 1.0
+# @license MIT
+# @requirements bedTools
+#
+# Copyright (c) 2014, Jens Preussner
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+#####################################################################################################################
+hash multiIntersectBed 2>/dev/null || { echo >&2 "multiIntersectBed required but it does not seem to be installed. Aborting."; exit 1; }
+hash intersectBed 2>/dev/null || { echo >&2 "intersectBed required but it does not seem to be installed. Aborting."; exit 1; }
+hash mergeBed 2>/dev/null || { echo >&2 "mergeBed required but it does not seem to be installed. Aborting."; exit 1; }
+hash awk 2>/dev/null || { echo >&2 "awk required but it does not seem to be installed. Aborting."; exit 1; }
+
+# Set default parameters
+EXPAND=true
+MINOVL=0
+MINSAM=1
+SORT=true
+C=4
+O="distinct"
+DELIM=","
+
+ORGIFS=$IFS
+
+while getopts ":hsem:n:c:o:d:" opt; do
+  case $opt in
+    h)
+      echo "Usage: $0 [-e] [-m <INT>] [-s <INT>] [-c <INT>[,<INT>,..]] [-o <CHAR>[,<CHAR,..]] [-d <CHAR>] file1 file2 [file3 ..]"
+      echo "-e			Do not expand overlapping regions to maximum (false)."
+      echo "-m <INT>		Minimal overlap to be counted (0)."
+      echo "-n <INT>		Minimal number of samples for a region to be counted (1)."
+      echo "-s			Skip sorting of bed files prior to analysis (false)."
+      echo "-c <INT>[,<INT>,..] Specifiy columns from the input to operate on (4)."
+      echo "-o <CHR>[,<CHR,..]	Specify operation that should be applied to -c (distinct)."
+      echo "-d <CHAR>		Sepcify delimiter for concat options (,)."
+      ;;
+    e)
+      #echo "-e was triggered, Parameter: $OPTARG" >&2
+      EXPAND=false
+      ;;
+    m)
+      #echo "-m was triggered, Parameter: $OPTARG" >&2
+      MINOVL=$OPTARG
+      ;;
+    n)
+      MINSAM=$OPTARG
+      ;;
+    s)
+      SORT=false
+      ;;
+    c)
+      C=$OPTARG
+      ;;
+    o)
+      O=$OPTARG
+      ;;
+    d)
+      DELIM=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit 1
+      ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+if [ $# -eq 0 ]
+  then
+    echo "Use $0 -h for help. No files supplied for processing. Exit." >&2
+    exit 1
+fi
+
+if [ "$SORT" = true ]; then
+  for b in $@; do
+    mv $b $b.unsorted
+    sort -k1,1 -k2,2n $b.unsorted > $b
+    rm -rf $b.unsorted
+  done
+fi
+
+if [ "$EXPAND" = false ]; then
+  multiIntersectBed -s -i $@ | awk "\$4 >= $MINSAM" | awk "\$3-\$2 >= $MINOVL" | cut -f1,2,3 
+fi
+
+if [ "$EXPAND" = true ]; then
+  OVERLAPS=$( (multiIntersectBed -i $@ -names $@ | awk '$4 >= '$MINSAM | awk '$3-$2 >='$MINOVL | cut -f1,2,3,5 | awk 'BEGIN{FS="\t";OFS=":"}{print $1,$2,$3,$4;}') )
+  for o in ${OVERLAPS}; do
+    region=( ${o//:/ } )
+    printf "%s\t%s\t%s\n" ${region[0]} ${region[1]} ${region[2]} > tmp-region.bed
+    files=( ${region[3]//\,/ } )
+    rm -rf tmp-candidates.bed
+    for f in ${files[@]}; do
+      intersectBed -wa -a $f -b tmp-region.bed >> tmp-candidates.bed
+    done
+    sort -k1,1 -k2,2n tmp-candidates.bed | mergeBed -delim $DELIM -c $C -o $O -i -
+    rm -rf tmp-candidates.bed tmp-region.bed
+  done
+fi
