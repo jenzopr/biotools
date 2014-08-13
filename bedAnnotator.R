@@ -40,7 +40,7 @@ options = matrix(c(
   'gtf','f',2,'character','A gtf file with the annotation data (null).',
   'annotation','a',2,'character','A short description for the annotation (annotation).',
   'strategy','s',2,'character','Annotation strategy. Can be overlap or nearest (overlap).',
-  'maxgap','m',2,'integer','Intervals are allowed to be separated by at most <maxgap> bases with strategy overlap (5000).',
+  'maxgap','m',2,'integer','Intervals are allowed to be separated by at most <maxgap> bases (5000).',
   'id_attribute','i',2,'character','Which gff3/gtf attribute (column 9) to use as feature ID (ID).',
   'select_strategy','t',2,'character','Define how to deal with multiple overlaps [all,first,last,arbitrary] (all).',
   'peaklocation','u',2,'character','Define location in peak for distance calculation in nearest strategy [middle,start] (middle).',
@@ -76,30 +76,17 @@ parseIDFromGftAttributes = function(x,i) {
   }))
 }
 
-printOverlap = function(overlap, format, strategy, omit_additional_infos=FALSE) {
+printOverlap = function(overlap, format, omit_additional_infos=FALSE) {
   strand = overlap$strand;
-  if(strategy == "overlap-nonbi") {
-    chr = overlap$chr;
-    start = overlap$peaks_start;
-    end = overlap$peaks_end;
-    peaks_name = overlap$peaks;
-    feature_name = as.character(overlap$annotation);
-    feature_strand = overlap$strand1;
-    feature_position = overlap$overlapFeature;
-    feature_start = overlap$annotation_start;
-    feature_end = overlap$annotation_end;
-  }
-  else {
-    chr = as.character(overlap$space);
-    start = start(overlap);
-    end = end(overlap);
-    peaks_name = overlap$peak;
-    feature_name = overlap$feature;
-    feature_strand = overlap$strand;
-    feature_position = overlap$insideFeature;
-    feature_start = overlap$start_position;
-    feature_end = overlap$end_position;
-  }
+  chr = as.character(overlap$space);
+  start = start(overlap);
+  end = end(overlap);
+  peaks_name = overlap$peak;
+  feature_name = overlap$feature;
+  feature_strand = overlap$strand;
+  feature_position = overlap$insideFeature;
+  feature_start = overlap$start_position;
+  feature_end = overlap$end_position;
 
   if(format == "gff") {
     AttributesData = read.table(file.path(opt$gff),header=opt$annotationheader, sep="\t", colClasses = c(rep("NULL",8),"character"))
@@ -108,6 +95,10 @@ printOverlap = function(overlap, format, strategy, omit_additional_infos=FALSE) 
   if(format == "gtf") {
     AttributesData = read.table(file.path(opt$gtf),header=opt$annotationheader, sep="\t", colClasses = c(rep("NULL",8),"character"))
     attributes = parseIDFromGftAttributes(AttributesData$V9,opt$id_attribute)
+  }
+  if(format == "bed") {
+    AttributesData = read.table(file.path(opt$bed),header=opt$annotationheader, sep="\t", colClasses = c(rep("NULL",3),"character"))
+    feature_name = AttributesData$V4
   }
   if(format %in% c("gff","gtf")) {
     fullAnnotation = AttributesData[as.numeric(feature_name),"V9"];
@@ -182,16 +173,18 @@ if (annotationFormat %in% c("gff","gtf")) {
 # Perform overlap or nearest-search depending on strategy
 if( opt$strategy == 'overlap' ) {
   if ( !opt$bidirectional ) {
-    ovl_data = findOverlappingPeaks(peaks, annotation, maxgap=opt$maxgap, select=opt$select_strategy, annotate=1, NameOfPeaks1="peaks", NameOfPeaks2="annotation")
-    printOverlap(ovl_data$OverlappingPeaks, annotationFormat, 'overlap-nonbi', opt$omit_full_annotation)
+    #ovl_data = findOverlappingPeaks(peaks, annotation, maxgap=opt$maxgap, select=opt$select_strategy, annotate=1, NameOfPeaks1="peaks", NameOfPeaks2="annotation")
+    #printOverlap(ovl_data$OverlappingPeaks, annotationFormat, 'overlap-nonbi', opt$omit_full_annotation)
+    ovl = annotatePeakInBatch(peaks, AnnotationData = annotation, output = 'overlapping', maxgap = opt$maxgap, select=opt$select_strategy, FeatureLocForDistance = opt$featurelocation)
+    printOverlap(ovl, annotationFormat, opt$omit_full_annotation)
   } else {
     ovl_data = peaksNearBDP(peaks, AnnotationData=annotation, MaxDistance=opt$maxgap, PeakLocForDistance = "middle", FeatureLocForDistance = "TSS")
-    printOverlap(ovl_data$peaksWithBDP, annotationFormat, 'overlap-bi', opt$omit_full_annotation)
+    printOverlap(ovl_data$peaksWithBDP, annotationFormat,  opt$omit_full_annotation)
   }
 } else {
   if ( opt$strategy == 'nearest' ) {
-    ovl = annotatePeakInBatch(peaks, AnnotationData = annotation, maxgap = opt$maxgap, select=opt$select_strategy, PeakLocForDistance = opt$peaklocation, FeatureLocForDistance = opt$featurelocation)
-    printOverlap(ovl, annotationFormat, 'nearest', opt$omit_full_annotation)
+    ovl = annotatePeakInBatch(peaks, AnnotationData = annotation, output = 'nearestStart', select=opt$select_strategy, PeakLocForDistance = opt$peaklocation, FeatureLocForDistance = opt$featurelocation)
+    printOverlap(ovl, annotationFormat, opt$omit_full_annotation)
   } else {
     cat(paste("Unrecognized strategy",opt$strategy,"..."),file = stderr())
     if (opt$writethrough) { q(status=2); }
