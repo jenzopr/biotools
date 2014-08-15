@@ -98,13 +98,20 @@ printOverlap = function(overlap, format, omit_additional_infos=FALSE) {
   }
   if(format == "bed") {
     AttributesData = read.table(file.path(opt$bed),header=opt$annotationheader, sep="\t", colClasses = c(rep("NULL",3),"character"))
-    feature_name = AttributesData$V4
+    if (length(unique(AttributesData[,"V4"])) != length(AttributesData[,"V4"]) ) {
+      feature_name = AttributesData[as.numeric(feature_name),"V4"];
+    }
   }
   if(format %in% c("gff","gtf")) {
     fullAnnotation = AttributesData[as.numeric(feature_name),"V9"];
     feature_name = attributes[as.numeric(feature_name)];
   }
-
+  
+  PeaksData = read.table(file.path(opt$peaks),header=opt$peakheader, sep="\t", colClasses = c(rep("NULL",3),"character"))
+  if( length(unique(PeaksData[,"V4"])) != length(PeaksData[,"V4"]) ) {
+    peaks_name = PeaksData[as.numeric(peaks_name),"V4"]
+  }
+  
   if(format %in% c("gff","gtf") && !omit_additional_infos) {
     cat(paste(chr,start,end,peaks_name,strand,opt$annotation,feature_start,feature_end,feature_name,feature_strand,feature_position,fullAnnotation,sep="\t"),sep="\n")
   }
