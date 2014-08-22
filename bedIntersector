@@ -111,6 +111,7 @@ if [ "$EXPAND" = false ]; then
 fi
 
 if [ "$EXPAND" = true ]; then
+  rm -rf tmp-result.bed
   OVERLAPS=$( (multiIntersectBed -i $@ -names $@ | awk '$4 >= '$MINSAM | awk '$3-$2 >='$MINOVL | cut -f1,2,3,5 | awk 'BEGIN{FS="\t";OFS=":"}{print $1,$2,$3,$4;}') )
   for o in ${OVERLAPS}; do
     region=( ${o//:/ } )
@@ -120,7 +121,10 @@ if [ "$EXPAND" = true ]; then
     for f in ${files[@]}; do
       intersectBed -wa -a $f -b tmp-region.bed >> tmp-candidates.bed
     done
-    sort -k1,1 -k2,2n tmp-candidates.bed | mergeBed -delim $DELIM -c $C -o $O -i -
+    sort -k1,1 -k2,2n tmp-candidates.bed | mergeBed -delim $DELIM -c $C -o $O -i - >> tmp-result.bed
     rm -rf tmp-candidates.bed tmp-region.bed
   done
+  # Adds support for non-unique intervals, this is a idempotent action on already uniq files.
+  mergeBed -delim $DELIM -c $C -o $O -i tmp-result.bed
+  rm -rf tmp-result.bed
 fi
