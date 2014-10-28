@@ -9,7 +9,7 @@ import argparse, json, os, re, sys
 from Bio import SeqIO
 from Bio.Blast import NCBIXML
 
-version = '1.0.0'
+version = '1.0.1'
 authors = 'Jens Preussner'
 
 #-----------------------------------------------------------------------
@@ -22,6 +22,113 @@ def guessFileFormat(f):
 	else:
 		return(None)
 
+def saveTrinotateCDS(query, CDSid, description):
+	global annotation
+	if query in annotation:
+		# Create a pattern for type, len, start, end and strand of the cds
+		p = re.compile('type:([a-z0-9_]+).*len:([0-9]+).*'+query+':([0-9]+)-([0-9]+)\((.)\)')
+		m = p.search(description)
+		if m is not None:
+			CDStype = m.group(1).lower()
+			CDSlength = m.group(2)
+			CDSstart = m.group(3)
+			CDSend = m.group(4)
+			CDSstrand = m.group(5)
+			if 'CDS' in annotation[query]:
+				cds = annotation[query]['CDS']
+			else:
+				cds = {}
+			if CDSid not in cds:
+				cds[CDSid] = {'start':CDSstart, 'end':CDSend, 'strand':CDSstrand, 'length':CDSlength, 'type':CDStype}
+			else:
+				cds[CDSid]['start'] = CDSstart
+				cds[CDSid]['end'] = CDSend
+				cds[CDSid]['strand'] = CDSstrand
+				cds[CDSid]['length'] = CDSlength
+				cds[CDSid]['type'] = CDStype
+			annotation[query]['CDS'] = cds 
+	elif args.verbose:
+		print("Can't find query "+query+" in fasta/annotation file. Skipping this query..")	
+
+def processSignalP(l):
+	global annotation
+	for f in l:
+		for entry in f:
+			fields = entry.split('\t')
+			recordPattern = re.compile('cds\.(.*)\|(m\.[0-9]+)',re.IGNORECASE)
+			m = recordPattern.search(fields[0])
+			if m is not None :
+				recordId = m.group(1).lower()
+				CDSid = m.group(2).lower()
+				if recordId in annotation:
+					if 'CDS' in annotation[recordId]:
+               		                 	cds = annotation[recordId]['CDS']
+					else:
+						cds = {}
+					if CDSid not in cds:
+						cds[CDSid] = {'signalp':[{'start':fields[3], 'end':fields[4], 'score':fields[5]}]}
+					else:
+						if 'signalp' in cds[CDSid]:
+							cds[CDSid]['signalp'].append({'start':fields[3], 'end':fields[4], 'score':fields[5]})
+						else:
+							cds[CDSid]['signalp'] = [{'start':fields[3], 'end':fields[4], 'score':fields[5]}]
+					annotation[recordId]['CDS'] = cds
+				elif args.verbose:
+					print("Can't find query "+query+" in fasta/annotation file. Skipping this query..")
+			
+def processTMHMM(l):
+	global annotation
+	for f in l:
+		for entry in f:
+			fields = entry.split('\t')
+			recordPattern = re.compile('cds\.(.*)\|(m\.[0-9]+)',re.IGNORECASE)
+			m = recordPattern.search(fields[0])
+			if m is not None:
+				recordId = m.group(1).lower()
+				CDSid = m.group(2).lower()
+				if recordId in annotation:
+					if 'CDS' in annotation[recordId]:
+						cds = annotation[recordId]['CDS']
+					else:
+						cds = {}
+					helices = fields[4].split('=')[1]
+					topology = fields[5].split('=')[1].rstrip('\n')
+					if CDSid not in cds:
+						cds[CDSid] = {'tmhmm':[{'topology':topology, 'helices':helices}]}
+					else:
+						if 'tmhmm' in cds[CDSid]:
+							cds[CDSid]['tmhmm'].append({'topology':topology, 'helices':helices})
+						else:
+							cds[CDSid]['tmhmm'] = [{'topology':topology, 'helices':helices}]
+					annotation[recordId]['CDS'] = cds
+			elif args.verbose:
+				print("Can't find query "+query+" in fasta/annotation file. Skipping this query..")
+
+def processPfam(l):
+	global annotation
+	for f in l:
+		for entry in f:
+			fields = entry.split()
+			recordPattern = re.compile('(.*)\|(m\.[0-9]+)',re.IGNORECASE)
+			m = recordPattern.search(fields[3])
+			if m is not None:
+				recordId = m.group(1).lower()
+				CDSid = m.group(2).lower()
+				if recordId in annotation:
+					if 'CDS' in annotation[recordId]:
+						cds = annotation[recordId]['CDS']
+					else:
+						cds = {}
+					if CDSid not in cds:
+						cds[CDSid] = {'domains':[{'name':fields[0], 'acc':fields[1], 'evalue':fields[12], 'start':fields[19], 'end':fields[20]}]}
+					else:
+						if 'domains' in cds[CDSid]:
+							cds[CDSid]['domains'].append({'name':fields[0], 'acc':fields[1], 'evalue':fields[12], 'start':fields[19], 'end':fields[20]})
+						else:
+							cds[CDSid]['domains'] = [{'name':fields[0], 'acc':fields[1], 'evalue':fields[12], 'start':fields[19], 'end':fields[20]}]
+					annotation[recordId]['CDS'] = cds
+			elif args.verbos:
+				print("Can't find query "+query+" in fasta/annotation file. Skipping this query..")
 
 def parse(file,filetype,flavour,pattern,cutoff='1e-15'):
 	global annotation
@@ -56,13 +163,6 @@ def parse(file,filetype,flavour,pattern,cutoff='1e-15'):
 			if getGeneAlias(description) is not None:
 				annotation[query]['alias'].insert(0,getGeneAlias(description))
 			islowqual[query] = False
-	
-	def getAnnotation(query):
-		try:
-			# Try to find previous annotations of that query, splitting a potetntial defline into accession and description
-			return annotation[query]
-		except KeyError:
-			raise KeyError('BLAST query '+query+' was not found in supplied fasta file! Skipping this query...\n')
 	
 	def cleanQuery(x):
 		return x.split(' ',1)[0]
@@ -128,8 +228,15 @@ def processFilesInList(l,e,program):
 #-----------------------------------------------------------------------
 metavars=('file1','file2')
 parser = argparse.ArgumentParser(description='Builds an annotation table from a fasta file and different BLAST results.',epilog='Naming conventions: BLAST results should end in .xml for XML format, .tab for tabular format and .txt for plain BLAST output.')
-parser.add_argument('--fasta','-f', required=True, type=argparse.FileType('r'), help='A file with sequences in fasta format. Sequence identifiers have to match those in the BLAST results.',metavar='sequences.fasta')
+group_in = parser.add_mutually_exclusive_group(required=True)
+group_transdecoder = parser.add_argument_group(title=None, description='Results from the Trinotate annotation pipeline can be included using:')
+group_in.add_argument('--fasta','-f', type=argparse.FileType('r'), help='A file with sequences in fasta format. Sequence identifiers have to match those in the BLAST results.',metavar='sequences.fasta')
+group_in.add_argument('--annotation', '-a', type=argparse.FileType('r'), help='An existing json annotation file from previous runs of this tool.',metavar='annotation.json')
 parser.add_argument('--out','-o',required=True, type=argparse.FileType('w'), help='A writeable file to which output is directed.',metavar='output.tabular')
+group_transdecoder.add_argument('--cds', type=argparse.FileType('r'), help='Transdecoders CDS file (required for use with Trinotate results).', metavar='transdecoder.cds', default=sys.stdin)
+group_transdecoder.add_argument('--signalp', nargs='*', type=argparse.FileType('r'), help='Trinotates output for SignalP in tabular format.', metavar=metavars, default=sys.stdin)
+group_transdecoder.add_argument('--tmhmm', nargs='*', type=argparse.FileType('r'), help='Trinotates output for TMHMM in tabular format.', metavar=metavars, default=sys.stdin)
+group_transdecoder.add_argument('--pfam', nargs='*', type=argparse.FileType('r'), help='Trinotates output for Pfam search in tabular format.', metavar=metavars, default=sys.stdin)
 parser.add_argument('--blastp', nargs='*', type=argparse.FileType('r'), help='BLAST results from BLASTP searches in plain, tabular or XML format (default).', metavar=metavars, default=sys.stdin)
 parser.add_argument('--blastn', nargs='*', type=argparse.FileType('r'), help='BLAST results from BLASTN searches in plain, tabular or XML format (default).', metavar=metavars, default=sys.stdin)
 parser.add_argument('--blastx', nargs='*', type=argparse.FileType('r'), help='BLAST results from BLASTX searches in plain, tabular or XML format (default).', metavar=metavars, default=sys.stdin)
@@ -156,11 +263,26 @@ islowqual = {}
 # Read input
 # a) FASTA file for a new annotation table
 # b) An existing annotation table for updating annotations
+# c) An (optional) file with CDS sequences
 #----------------------------------------------------------------------
-for record in SeqIO.parse(args.fasta, 'fasta'):
-	annotation[record.id] = {}
-	annotation[record.id]['alias'] = []
-	islowqual[record.id] = True
+if args.fasta:
+	for record in SeqIO.parse(args.fasta, 'fasta'):
+		annotation[record.id] = {}
+		annotation[record.id]['alias'] = []
+		annotation[record.id]['cds'] = []
+		islowqual[record.id] = True
+
+if args.annotation:
+	annotation = json.load(args.annotation)
+
+if args.cds:
+	recordPattern = re.compile('cds\.(.*)\|(m\.[0-9]+)',re.IGNORECASE)
+	for record in SeqIO.parse(args.cds, 'fasta'):
+		m = recordPattern.search(record.id)
+		if m is not None :
+			recordId = m.group(1).lower()
+			CDSid = m.group(2)
+			saveTrinotateCDS(recordId, CDSid, record.description)
 
 #----------------------------------------------------------------------
 # Parse exclude list and generate a regular expression pattern
@@ -183,9 +305,18 @@ if type(args.tblastx) is list:
 	processFilesInList(args.tblastx,args.etblastx,'tblastx')
 if type(args.blastx) is list:
 	processFilesInList(args.blastx,args.eblastx,'blastx')
+if type(args.signalp) is list:
+	processSignalP(args.signalp)
+if type(args.tmhmm) is list:
+	processTMHMM(args.tmhmm)
+if type(args.pfam) is list:
+	processPfam(args.pfam)
 #----------------------------------------------------------------------
 # Print results
 #----------------------------------------------------------------------
+
+if args.json is not None:
+	json.dump(annotation,args.json,indent=1)
 
 for query in sorted(annotation):
 	if not annotation[query]:
@@ -201,5 +332,3 @@ for query in sorted(annotation):
 	args.out.write(','.join(annotationList))
 	args.out.write('\n')
 
-if args.json is not None:
-	json.dump(annotation,args.json,indent=1)
