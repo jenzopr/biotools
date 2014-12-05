@@ -86,7 +86,7 @@ printOverlap = function(overlap, format, omit_additional_infos=FALSE) {
   feature_position = overlap$insideFeature;
   feature_start = overlap$start_position;
   feature_end = overlap$end_position;
-  strand = peaks[as.numeric(peaks_name),]$strand;
+  strand = peaks$strand[as.numeric(peaks_name)];
   
   if(format == "gff") {
     AttributesData = read.table(file.path(opt$gff),header=opt$annotationheader, sep="\t", colClasses = c(rep("NULL",8),"character"))
