@@ -183,9 +183,11 @@ if( opt$strategy == 'overlap' ) {
     #ovl_data = findOverlappingPeaks(peaks, annotation, maxgap=opt$maxgap, select=opt$select_strategy, annotate=1, NameOfPeaks1="peaks", NameOfPeaks2="annotation")
     #printOverlap(ovl_data$OverlappingPeaks, annotationFormat, 'overlap-nonbi', opt$omit_full_annotation)
     ovl = annotatePeakInBatch(peaks, AnnotationData = annotation, output = 'overlapping', maxgap = opt$maxgap, select=opt$select_strategy, FeatureLocForDistance = opt$featurelocation)
-    if ( all(ovl == peaks) ) {
-      cat(paste("No overlapping peaks found.."),file=stderr())
-      q(status=2)
+    if ( ncol(ovl) == ncol(peaks) ) {
+      if ( all(ovl == peaks) ) {
+        cat(paste("No overlapping peaks found.."),file=stderr())
+        q(status=2)
+      }
     }
     printOverlap(ovl, annotationFormat, opt$omit_full_annotation)
   } else {
@@ -195,9 +197,11 @@ if( opt$strategy == 'overlap' ) {
 } else {
   if ( opt$strategy == 'nearest' ) {
     ovl = annotatePeakInBatch(peaks, AnnotationData = annotation, output = 'nearestStart', select=opt$select_strategy, PeakLocForDistance = opt$peaklocation, FeatureLocForDistance = opt$featurelocation)
-    if ( all(ovl == peaks) ) {
-      cat(paste("No overlapping peaks found.."),file=stderr())
-      q(status=2)
+    if ( ncol(ovl) == ncol(peaks) ) {
+      if ( all(ovl == peaks) ) {
+        cat(paste("No overlapping peaks found.."),file=stderr())
+        q(status=2)
+      }
     }
     printOverlap(ovl, annotationFormat, opt$omit_full_annotation)
   } else {
